@@ -62,11 +62,11 @@ returnCode ConvertFile(const char inFileName[], const char outFileName[], conver
 {
 	FILE *inFile;
 
-	if (fopen_s(&inFile, inFileName, "r") == 0)
+	if (fopen_s(&inFile, inFileName, "rb") == 0)
 	{
 		FILE *outFile;
 
-		if (fopen_s(&outFile, outFileName, "w") == 0)
+		if (fopen_s(&outFile, outFileName, "wb") == 0)
 		{
 			int tmpByte;
 			while ((tmpByte = fgetc(inFile)) != EOF)
