@@ -3,14 +3,13 @@
 
 #include "stdafx.h"
 
-typedef uint8_t byte_t;
-const byte_t BYTE_MAX = UINT8_MAX;
-typedef uint8_t bitPos_t;
-const bitPos_t BYTE_BIT_COUNT = 8;
-typedef bitPos_t byteBitPosRatio_t[BYTE_BIT_COUNT];
-typedef byte_t(*convertByteFunc_t)(byte_t byte, byte_t key);
+using namespace std;
 
-enum class returnCode
+const unsigned BYTE_BIT_COUNT = 8;
+typedef unsigned ByteBitPosRatio[BYTE_BIT_COUNT];
+typedef function<uint8_t(uint8_t)> ConvertByteFunc;
+
+enum class ReturnCode
 {
 	SUCCESS,
 	INPUT_ERROR,
@@ -20,18 +19,18 @@ enum class returnCode
 	BAD_USAGE
 };
 
-byte_t GetByteBitMask(bitPos_t pos)
+uint8_t GetByteBitMask(unsigned pos)
 {
 	assert(pos < BYTE_BIT_COUNT);
-	return ((byte_t)1 << pos);
+	return (static_cast<uint8_t>(1) << pos);
 }
 
-byte_t MoveByteBits(byte_t byte, byteBitPosRatio_t const& ratio)
+uint8_t MoveByteBits(uint8_t byte, ByteBitPosRatio const& ratio)
 {
-	byte_t result = 0;
+	uint8_t result = 0;
 
-	bitPos_t srcBitPos;
-	byte_t srcBitMask;
+	unsigned srcBitPos;
+	uint8_t srcBitMask;
 	for (srcBitPos = 0, srcBitMask = 1; srcBitPos < BYTE_BIT_COUNT; ++srcBitPos, srcBitMask <<= 1)
 	{
 		if (byte & srcBitMask)
@@ -43,109 +42,100 @@ byte_t MoveByteBits(byte_t byte, byteBitPosRatio_t const& ratio)
 	return result;
 }
 
-byte_t CryptByte(byte_t byte, byte_t key)
+uint8_t CryptByte(uint8_t byte, uint8_t key)
 {
 	return MoveByteBits(byte ^ key, { 2, 3, 4, 6, 7, 0, 1, 5 });
 }
 
-byte_t DecryptByte(byte_t byte, byte_t key)
+uint8_t DecryptByte(uint8_t byte, uint8_t key)
 {
 	return (MoveByteBits(byte, { 5, 6, 0, 1, 2, 7, 3, 4 }) ^ key);
 }
 
-void PrintUsage(const char programName[])
+ReturnCode ConvertFile(const char inFileName[], const char outFileName[], ConvertByteFunc func)
 {
-	printf("Usage: %s [ crypt / decrypt ] <input file> <output file> <key>\n", programName);
+	ifstream inFile(inFileName, ios_base::binary);
+	if (!inFile.is_open())
+	{
+		cout << "Input file open error" << endl;
+		return ReturnCode::INPUT_ERROR;
+	}
+
+	ofstream outFile(outFileName, ios_base::binary);
+	if (!outFile.is_open())
+	{
+		cout << "Output file open error" << endl;
+		return ReturnCode::OUTPUT_ERROR;
+	}
+
+	char curByte;
+	while (inFile.get(curByte))
+	{
+		outFile.put(func(curByte));
+	}
+	return ReturnCode::SUCCESS;
 }
 
-returnCode ConvertFile(const char inFileName[], const char outFileName[], convertByteFunc_t func, byte_t key)
+ReturnCode ParseByteStr(const char str[], uint8_t &result)
 {
-	FILE *inFile;
-
-	if (fopen_s(&inFile, inFileName, "rb") == 0)
+	int strNum;
+	try
 	{
-		FILE *outFile;
-
-		if (fopen_s(&outFile, outFileName, "wb") == 0)
-		{
-			int tmpByte;
-			while ((tmpByte = fgetc(inFile)) != EOF)
-			{
-				fputc(func(tmpByte, key), outFile);
-			}
-
-			fclose(outFile);
-			fclose(inFile);
-			return returnCode::SUCCESS;
-		}
-		else
-		{
-			puts("Output file open error");
-			fclose(inFile);
-			return returnCode::OUTPUT_ERROR;
-		}
+		strNum = stoi(str);
 	}
-	else
+	catch (invalid_argument const& e)
 	{
-		puts("Input file open error");
-		return returnCode::INPUT_ERROR;
+		(void)e;
+		cout << "Incorrect key format" << endl;
+		return ReturnCode::BAD_KEY_FORMAT;
 	}
-}
 
-byte_t ParseByteStr(const char str[])
-{
-	int strNum = std::stoi(str);
+	if (strNum < 0 || strNum > UINT8_MAX)
+	{
+		cout << "Key value is out of range" << endl;
+		return ReturnCode::BAD_KEY_RANGE;
+	}
 
-	if (strNum >= 0 && strNum <= BYTE_MAX)
-	{
-		return strNum;
-	}
-	else
-	{
-		throw std::out_of_range("ParseByteStr argument number is out of range");
-	}
+	result = strNum;
+	return ReturnCode::SUCCESS;
 }
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-	if (argc == 5)
-	{
-		try
-		{
-			byte_t key = ParseByteStr(argv[4]);
+	assert(argc > 0);
+	const string USAGE_HINT =
+		"Usage: " + string(argv[0]) + " [ crypt / decrypt ] <input file> <output file> <key>";
 
-			if (strcmp(argv[1], "crypt") == 0)
-			{
-				return static_cast<int>(ConvertFile(argv[2], argv[3], CryptByte, key));
-			}
-			else if (strcmp(argv[1], "decrypt") == 0)
-			{
-				return static_cast<int>(ConvertFile(argv[2], argv[3], DecryptByte, key));
-			}
-			else
-			{
-				assert(argc > 0);
-				PrintUsage(argv[0]);
-				return static_cast<int>(returnCode::BAD_USAGE);
-			}
-		}
-		catch (std::invalid_argument const& e)
-		{
-			(void)e;
-			puts("Incorrect key format");
-			return static_cast<int>(returnCode::BAD_KEY_FORMAT);
-		}
-		catch (std::out_of_range const& e)
-		{
-			(void)e;
-			puts("Key value is out of range");
-			return static_cast<int>(returnCode::BAD_KEY_RANGE);
-		}
-	}
-	else
+	if (argc != 5)
 	{
-		assert(argc > 0);
-		PrintUsage(argv[0]);
-		return static_cast<int>(returnCode::BAD_USAGE);
+		cout << USAGE_HINT << endl;
+		return static_cast<int>(ReturnCode::BAD_USAGE);
 	}
+
+	uint8_t key;
+	{
+		const ReturnCode parseResult = ParseByteStr(argv[4], key);
+		if (parseResult != ReturnCode::SUCCESS)
+		{
+			return static_cast<int>(parseResult);
+		}
+	}
+
+	ConvertByteFunc convFunc;
+	if (strcmp(argv[1], "crypt") == 0)
+	{
+		convFunc = [key](uint8_t byte){ return CryptByte(byte, key); };
+	}
+	else if (strcmp(argv[1], "decrypt") == 0)
+	{
+		convFunc = [key](uint8_t byte){ return DecryptByte(byte, key); };
+	}
+
+	if (!convFunc)
+	{
+		cout << USAGE_HINT << endl;
+		return static_cast<int>(ReturnCode::BAD_USAGE);
+	}
+
+	return static_cast<int>(ConvertFile(argv[2], argv[3], convFunc));
 }
